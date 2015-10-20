@@ -1,0 +1,183 @@
+
+
+ 
+
+
+
+
+课程名称：	
+计算机动画
+姓    名：	
+龚立雪
+学    院：	
+计算机科学与技术学院
+
+专    业：	
+数字媒体技术
+学    号：	
+3130104153
+指导教师：	
+于金辉
+
+
+  2015年   10  月   10  日
+
+
+
+
+浙江大学实验报告
+
+课程名称：    计算机动画                实验类型：  综合       
+实验项目名称：           动画路径控制曲线                       
+学生姓名：  龚立雪   专业：  数字媒体技术    学号：  3130104153 
+同组学生姓名：                              指导老师：  于金辉   
+实验地点：                   实验日期：   年    月    日
+
+一、	实验目的和要求
+1.1 实验目的
+	设计并实现一个路径控制曲线，了解Cardinal样条曲线的生成方法和特点，理解差值函数里各参数的意义。
+1.2 实验要求
+	（1） 找出Cardinal样条曲线的矩阵表示和程序之间的对应关系；
+	（1） 通过给定控制点，计算生成Cardinal样条曲线；
+	（2） 能够改变控制参数，进而控制样条曲线的形状；
+二、	实验内容和原理
+2.1通过控制点生成Cardinal样条曲线
+	Cardinal样条曲线矩阵表示如下：
+P(u) = UTMB
+	其中M是Hermite多项式矩阵，B是样条曲线参数。Cardinal Spline的控制点的切向量是这样得到的：
+Pi’ = τ*（Pi+1 – Pi-1）
+	当τ=0.5时，得到的就是Catmull Spline。τ越小，控制点切向量越小，曲线弯曲程度越小。
+	将曲线矩阵表示展开得到如下表达式：
+ 
+2.2样条曲线绘制
+	可将上述算法所计算出的样条曲线上的各个点存储在一个数据结构中，然后再使用Qt中的绘制事件将各点连接，绘制出曲线。
+2.3改变样条曲线控制参数
+	在矩阵表示式中，改变τ可改变曲线弯曲程度。同时我们也可改变每两个控制点之间所插入的点的个数来改变曲线平滑程度。可通过Qt信号槽机制，在改变参数数值的同时，实时改变曲线形状。
+三、	实验器材
+安装有Qt5.4.0的PC	……………… 1台
+四、	实验步骤
+4.1 Cardinal样条曲线矩阵表示及其程序实现
+	（1） 首先在CSpline::GetCardinalMatrix(float a1)函数中得到如下多项式矩阵：
+ 
+		 代码如下，其中a1表示参数τ，矩阵中的每个元素记录在数组m[15]中：
+
+void CSpline::GetCardinalMatrix(float a1)
+{
+    m[0]=-a1;  m[1]=2-a1; m[2]=a1-2;   m[3]=a1;
+    m[4]=2*a1; m[5]=a1-3; m[6]=3-2*a1; m[7]=-a1;
+    m[8]=-a1;  m[9]=0;    m[10]=a1;    m[11]=0;
+    m[12]=0;   m[13]=1;   m[14]=0;     m[15]=0;
+}
+
+	
+	（2） 将上述矩阵与样条矩阵参数相乘，即：
+ 
+		 相应的代码如下：
+
+float CSpline::Matrix(float a, float b, float c, float d, float u)
+{
+    float p0,p1,p2,p3;
+    p0=m[0]*a + m[1]*b + m[2]*c + m[3]*d;
+    p1=m[4]*a + m[5]*b + m[6]*c + m[7]*d;
+    p2=m[8]*a + m[9]*b + m[10]*c + m[11]*d;
+    p3=m[12]*a + m[13]*b + m[14]*c + m[15]*d;
+    return(p3+u*(p2+u*(p1+u*p0)));
+}
+
+
+4.2 计算并存储样条曲线上的点
+	在4.1中以实现了Cardinal样条曲线生成算法，现在要使用该算法，通过给定的控制点来计算出样条曲线上的其他点，并将这些点的坐标存储在一个数组s中以便接下来的绘制。对应的代码如下：
+
+void CSpline::CSplineInit(int x[], int y[], int n, int grain, float tension)
+{
+    int i,np;
+    np = n;
+    QPoint jd[100];
+    QPoint *knots;
+
+    allCount = 0;
+
+    for(i=1;i<=np;i++)
+    {
+        jd[i].setX(x[i-1]);
+        jd[i].setY(y[i-1]);
+    }
+    jd[0].setX(x[0]);
+    jd[0].setY(y[0]);
+    jd[np+1].setX(x[np-1]);
+    jd[np+1].setY(y[np-1]);
+    np=np+2;
+    knots = jd;
+    CubicSpline(np,knots,grain,tension);
+}
+
+void CSpline::CubicSpline(int n, QPoint* knots, int grain, float tension)
+{
+    QPoint  *k0, *kml, *k1, *k2;
+    int i,j;
+    float u[30];
+    GetCardinalMatrix(tension);
+    for(i=0; i<=grain; i++)
+        u[i]=((float)i)/grain;
+    kml = knots;
+    k0 = kml+1;
+    k1 = k0+1;
+    k2 = k1+1;
+    for(i=1;i<n-2;i++)
+    {
+        for(j=0;j<=grain;j++)
+        {
+            s[allCount].setX(Matrix(kml->x(),k0->x(),k1->x(),k2->x(),u[j]));
+            s[allCount].setY(Matrix(kml->y(),k0->y(),k1->y(),k2->y(),u[j]));
+            //qDebug()<<s[allCount]<<" Cubic inserting";
+            allCount++;
+        }
+        k0++;kml++;k1++;k2++;
+    }
+}
+
+4.3 样条曲线的绘制
+	绘制样条曲线需要各个点的左边以及点的个数，这里使用Qt中的鼠标事件来拾取每次鼠标点击处的坐标，相应代码如下：
+
+void PaintedWidget::mousePressEvent(QMouseEvent *event)
+{
+    setCursor(Qt::PointingHandCursor);
+   // qDebug()<<event->pos()<<"mouse event";
+    QPoint current = event->pos();
+    // pick up the poings clicked and record them in the array
+    pp[count] = event->pos();
+    x[count] = pp[count].x();
+    y[count] = pp[count].y();
+
+    count++;
+    update();
+}
+	而后使用之前提到的样条曲线生成算法，以一定间隔计算出样条曲线上的各个点，并存储在数组中。现在需要使用Qt中的绘制函数将各点连接，绘制成“曲线”。这里绘制出来的曲线实际上使用多个小线段逼近的，而参数grain正是决定了逼近曲线的“平滑”程度。
+4.4 实现改变控制参数的功能
+	我们可通过改变参数τ（即程序中的tension）以及程序中的grain来改变样条曲线的形状。这里使用Qt中的信号槽机制来改变参数。例如：
+Set o_set;
+QObject::connect(sliderGrain,&QSlider::valueChanged,&o_set,&Set::setGrain);
+    QObject::connect(sliderGrain,&QSlider::valueChanged,&view,&PaintedWidget::sliderupdate);
+ 
+QSlider是Qt类，代表滑竿控件。需要注意的是，Qt中只有发生更新事件时才会重新绘制，因此每次改变滑竿的值时，都要执行一次update()重新绘制。
+4.5 清除窗口中已绘制曲线
+	清除窗口中已绘制曲线只需把存有曲线点的数组清空即可。点击按钮执行清除同样是通过Qt信号槽机制实现的。
+4.5 小车沿曲线运动
+	这里简单地实现了小车沿曲线匀速运动。与曲线绘制原理类似，小车的曲线运动实际上也是由多个小段的直线运动逼近的。
+五、	实验结果分析
+（1）本实验实现了通过给定控制点来绘制出Cardinal样条曲线的功能。
+ 
+
+（2）通过控制滑竿可改变曲线形状，tension可改变曲线弯曲程度，grain改变曲线平滑程度（见屏幕录像）：
+     
+ （3）通过观察可知，每当多指定一个控制点，之前绘制的最后一段样条曲线形状也会改变。这是因为上一点的切向量改变了，Pi’ = τ*（Pi+1 – Pi-1），每个点的切向量与该点的下一点有关：
+    
+（4）需要注意的一点是，我们需要对样条曲线的边界条件处理。这里使用的处理方法时将首尾两点重复赋值。经试验发现，如果不重复赋值，则必须给定至少4个控制点才能生成一段样条曲线，如下：
+ 
+	当进行重复赋值处理时，即便只给定两个控制点，也能生成一段直线。之前提到，每个点的切向量计算方法是：Pi’ = τ*（Pi+1 – Pi-1）。因此当重复赋值时，起点的切向量方向是由起点指向第二个点，终点的切向量也是由起点指向第二个点。因此只给定两个控制点时生成一段直线，这是合理的：
+ 
+	
+六、思考与总结
+	通过本实验，加强了对Cardinal样条曲线的理解。通过实现Cardinal样条曲线绘制算法，也更直观地体会了样条曲线表示式中各参数的含义。在PPT中所提出的“首尾两个点上不重复赋值会有什么结果”这个问题，也在实验中得到了解答。
+	本实验是一次学习Qt的机会，在实验中了解的Qt信号槽机制等良好特性，算是本实验另一大收获。
+	本程序是在Qt平台下基于面向对象编程的，因此对类的合理设计很重要。但本实验仍有不足之处，程序中仍有对类的设计不合理的现象，破坏了封装，以及不必要的全局变量的使用。希望在日后不断实践中，能够加强对面向对象编程的理解。
